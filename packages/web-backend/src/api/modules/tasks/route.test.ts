@@ -180,7 +180,7 @@ describe('tasks route module', () => {
     expect(body.events[2]?.role).toBe('assistant')
   })
 
-  it('fails fast when task message metadata contains malformed JSON', async () => {
+  it('falls back to raw string when task message metadata contains malformed JSON', async () => {
     const task = createTask({ name: 'Corrupted metadata task', sessionId: 'task-events-corrupt' })
 
     db.prepare(
@@ -197,10 +197,18 @@ describe('tasks route module', () => {
       headers: authHeaders(),
     })
 
-    const body = await res.json() as { error: string }
+    const body = await res.json() as {
+      task: { id: string }
+      events: Array<{ type: string; role?: string; metadata?: unknown }>
+    }
 
-    expect(res.status).toBe(500)
-    expect(body.error).toContain('Failed to get task events')
+    // A single malformed metadata row must not crash the endpoint; instead the
+    // service falls back to the raw string so the rest of the timeline loads.
+    expect(res.status).toBe(200)
+    expect(body.events).toHaveLength(1)
+    expect(body.events[0]?.type).toBe('message')
+    expect(body.events[0]?.role).toBe('assistant')
+    expect(body.events[0]?.metadata).toBe('{"thinking":')
   })
 
   it('kills running tasks and prevents killing non-running tasks', async () => {
