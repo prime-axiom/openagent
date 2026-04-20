@@ -25,7 +25,18 @@
         </div>
       </div>
     </Transition>
-    <div class="flex shrink-0 items-center gap-2 border-b border-border bg-background px-6 py-2">
+    <!--
+      Chat toolbar — uses the shared <PageHeader> (slim variant, no title)
+      so on mobile the action buttons teleport into the layout header and
+      the second bar disappears entirely.
+    -->
+    <PageHeader>
+      <!--
+        Connection status dot (desktop-only): lives in the default slot so
+        it renders on the LEFT side of the toolbar. On mobile it's not
+        needed — the global status indicator is hidden there too, and the
+        Send button's disabled state already communicates offline state.
+      -->
       <div class="flex items-center gap-2 text-sm text-muted-foreground">
         <span
           class="h-2 w-2 shrink-0 rounded-full"
@@ -37,44 +48,45 @@
         />
         <span class="hidden sm:inline">{{ chatStatusText }}</span>
       </div>
-      <div class="flex-1" />
-      <Button variant="outline" size="sm" class="gap-2 hover:border-destructive hover:text-destructive" :disabled="!isStreaming" @click="handleStop">
-        <AppIcon name="square" class="h-4 w-4" />
-        <span class="hidden sm:inline">{{ $t('chat.stop') }}</span>
-      </Button>
-      <Button variant="outline" size="sm" class="gap-2" :disabled="isStreaming || sessionResetting" @click="handleNewSession">
-        <AppIcon name="sparkles" class="h-4 w-4" />
-        <span class="hidden sm:inline">{{ $t('chat.newSession') }}</span>
-      </Button>
-      <Popover v-model:open="filterOpen">
-        <PopoverTrigger as-child>
-          <Button variant="outline" size="sm" class="gap-2">
-            <AppIcon name="settings" class="h-4 w-4" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent class="w-64">
-          <div class="flex flex-col gap-3">
-            <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{{ $t('chat.displayFilters') }}</p>
-            <div class="flex items-center justify-between gap-3">
-              <Label class="cursor-pointer text-sm" for="filter-thinking">{{ $t('chat.filterThinking') }}</Label>
-              <Switch id="filter-thinking" v-model:checked="showThinking" />
+      <template #actions>
+        <Button variant="outline" size="sm" class="gap-2 hover:border-destructive hover:text-destructive" :disabled="!isStreaming" @click="handleStop">
+          <AppIcon name="square" class="h-4 w-4" />
+          <span class="hidden sm:inline">{{ $t('chat.stop') }}</span>
+        </Button>
+        <Button variant="outline" size="sm" class="gap-2" :disabled="isStreaming || sessionResetting" @click="handleNewSession">
+          <AppIcon name="sparkles" class="h-4 w-4" />
+          <span class="hidden sm:inline">{{ $t('chat.newSession') }}</span>
+        </Button>
+        <Popover v-model:open="filterOpen">
+          <PopoverTrigger as-child>
+            <Button variant="outline" size="sm" class="gap-2">
+              <AppIcon name="settings" class="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent class="w-64">
+            <div class="flex flex-col gap-3">
+              <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{{ $t('chat.displayFilters') }}</p>
+              <div class="flex items-center justify-between gap-3">
+                <Label class="cursor-pointer text-sm" for="filter-thinking">{{ $t('chat.filterThinking') }}</Label>
+                <Switch id="filter-thinking" v-model:checked="showThinking" />
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <Label class="cursor-pointer text-sm" for="filter-tools">{{ $t('chat.filterToolCalls') }}</Label>
+                <Switch id="filter-tools" v-model:checked="showToolCalls" />
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <Label class="cursor-pointer text-sm" for="filter-injections">{{ $t('chat.filterInjections') }}</Label>
+                <Switch id="filter-injections" v-model:checked="showInjections" />
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <Label class="cursor-pointer text-sm" for="filter-summaries">{{ $t('chat.filterSessionSummaries') }}</Label>
+                <Switch id="filter-summaries" v-model:checked="showSessionSummaries" />
+              </div>
             </div>
-            <div class="flex items-center justify-between gap-3">
-              <Label class="cursor-pointer text-sm" for="filter-tools">{{ $t('chat.filterToolCalls') }}</Label>
-              <Switch id="filter-tools" v-model:checked="showToolCalls" />
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <Label class="cursor-pointer text-sm" for="filter-injections">{{ $t('chat.filterInjections') }}</Label>
-              <Switch id="filter-injections" v-model:checked="showInjections" />
-            </div>
-            <div class="flex items-center justify-between gap-3">
-              <Label class="cursor-pointer text-sm" for="filter-summaries">{{ $t('chat.filterSessionSummaries') }}</Label>
-              <Switch id="filter-summaries" v-model:checked="showSessionSummaries" />
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+          </PopoverContent>
+        </Popover>
+      </template>
+    </PageHeader>
 
     <div ref="messagesContainer" class="relative flex flex-1 flex-col gap-4 overflow-y-auto p-4" @scroll="onMessagesScroll" @copy="handleCopyAsMarkdown">
       <div v-if="loadingHistory" class="flex flex-col gap-3">
@@ -89,11 +101,14 @@
           v-for="(msg, i) in filteredMessages"
           :key="i"
           :class="[
-            msg.role === 'divider' ? 'w-full' : (msg.role === 'tool' || (msg.role === 'system' && msg.isTaskResult) || msg.isThinking) ? 'self-start w-full max-w-[80%] sm:max-w-[75%] pl-11' : 'flex max-w-[80%] gap-3 sm:max-w-[75%]',
+            // Mobile: messages fill the available width (minus avatar + gap
+            // or the pl-11 offset for tool cards). On sm+ screens we cap them
+            // so bubbles don't span edge-to-edge on wider viewports.
+            msg.role === 'divider' ? 'w-full' : (msg.role === 'tool' || (msg.role === 'system' && msg.isTaskResult) || msg.isThinking) ? 'self-start w-full max-w-full sm:max-w-[75%] pl-11' : 'flex max-w-full gap-3 sm:max-w-[75%]',
             {
               'self-end flex-row-reverse': msg.role === 'user',
               'self-start': msg.role === 'assistant' && !msg.isThinking,
-              'self-center max-w-[90%] !sm:max-w-[85%]': msg.role === 'system' && !msg.isTaskResult,
+              'self-center max-w-full sm:max-w-[85%]': msg.role === 'system' && !msg.isTaskResult,
             },
           ]"
         >
