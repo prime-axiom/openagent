@@ -492,6 +492,33 @@
 
                 <!-- Configuration — progressive disclosure -->
                 <template v-if="form.agentHeartbeat.enabled">
+                  <!-- Heartbeat tasks -->
+                  <div class="rounded-xl border border-border bg-card px-4 py-4">
+                    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                          <AppIcon name="file" size="sm" class="text-muted-foreground" />
+                          <h3 class="text-sm font-semibold text-foreground">
+                            {{ $t('settings.heartbeatTasksTitle') }}
+                          </h3>
+                        </div>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                          {{ $t('settings.heartbeatTasksDescription') }}
+                        </p>
+                        <div class="mt-3 inline-flex max-w-full items-center rounded-md border border-border bg-muted/50 px-2.5 py-1">
+                          <span class="truncate font-mono text-xs text-muted-foreground">/data/config/HEARTBEAT.md</span>
+                        </div>
+                      </div>
+
+                      <Button as-child variant="outline" class="shrink-0">
+                        <NuxtLink to="/instructions?file=heartbeat">
+                          {{ $t('settings.openEditor') }}
+                          <AppIcon name="externalLink" size="sm" />
+                        </NuxtLink>
+                      </Button>
+                    </div>
+                  </div>
+
                   <!-- Interval -->
                   <div class="flex flex-col gap-2">
                     <Label for="heartbeat-interval">{{ $t('settings.agentHeartbeatInterval') }}</Label>
@@ -573,32 +600,6 @@
                   </template>
 
                 </template>
-
-                <div class="rounded-xl border border-border bg-card px-4 py-4">
-                  <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <AppIcon name="file" size="sm" class="text-muted-foreground" />
-                        <h3 class="text-sm font-semibold text-foreground">
-                          {{ $t('settings.heartbeatTasksTitle') }}
-                        </h3>
-                      </div>
-                      <p class="mt-1 text-sm text-muted-foreground">
-                        {{ $t('settings.heartbeatTasksDescription') }}
-                      </p>
-                      <div class="mt-3 inline-flex max-w-full items-center rounded-md border border-border bg-muted/50 px-2.5 py-1">
-                        <span class="truncate font-mono text-xs text-muted-foreground">/data/config/HEARTBEAT.md</span>
-                      </div>
-                    </div>
-
-                    <Button as-child variant="outline" class="shrink-0">
-                      <NuxtLink to="/instructions?file=heartbeat">
-                        {{ $t('settings.openEditor') }}
-                        <AppIcon name="externalLink" size="sm" />
-                      </NuxtLink>
-                    </Button>
-                  </div>
-                </div>
               </div>
             </div>
 
