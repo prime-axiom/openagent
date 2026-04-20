@@ -97,7 +97,8 @@
     "micTranscribing": "Transcribing...",
     "micError": "Microphone error",
     "micPermissionDenied": "Microphone permission denied",
-    "micTooShort": "Recording too short — hold longer"
+    "micTooShort": "Recording too short — hold longer",
+    "dropFilesHere": "Drop files to attach"
   },
   "status": {
     "online": "Online",

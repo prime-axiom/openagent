@@ -97,7 +97,8 @@
     "micTranscribing": "Transkribiere...",
     "micError": "Mikrofonfehler",
     "micPermissionDenied": "Mikrofonzugriff verweigert",
-    "micTooShort": "Aufnahme zu kurz — länger halten"
+    "micTooShort": "Aufnahme zu kurz — länger halten",
+    "dropFilesHere": "Dateien zum Anhängen hier ablegen"
   },
   "status": {
     "online": "Online",
