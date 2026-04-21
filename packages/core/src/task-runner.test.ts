@@ -780,7 +780,7 @@ describe('TaskRunner', () => {
 
       // The PiAgent should have been created with only read_file
       expect(capturedOptions).toBeTruthy()
-      const passedTools = capturedOptions.initialState.tools
+      const passedTools = capturedOptions!.initialState.tools
       expect(passedTools).toHaveLength(1)
       expect(passedTools[0].name).toBe('read_file')
 
@@ -845,7 +845,7 @@ describe('TaskRunner', () => {
 
       // The PiAgent should have been created with the custom system prompt
       expect(capturedOptions).toBeTruthy()
-      expect(capturedOptions.initialState.systemPrompt).toBe(customPrompt)
+      expect(capturedOptions!.initialState.systemPrompt).toBe(customPrompt)
 
       const updated = store.getById(task.id)!
       expect(updated.status).toBe('completed')
@@ -887,8 +887,8 @@ describe('TaskRunner', () => {
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // Should use default prompt (contains "background task agent")
-      expect(capturedOptions.initialState.systemPrompt).toContain('background task agent')
-      expect(capturedOptions.initialState.systemPrompt).toContain('Do work')
+      expect(capturedOptions!.initialState.systemPrompt).toContain('background task agent')
+      expect(capturedOptions!.initialState.systemPrompt).toContain('Do work')
     })
 
     it('handles invalid toolsOverride JSON gracefully', async () => {
