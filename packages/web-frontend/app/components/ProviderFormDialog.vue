@@ -445,7 +445,11 @@ const selectedPreset = computed(() => {
 })
 
 const hasKnownModels = computed(() => {
-  return selectedPreset.value?.piAiProvider != null
+  // Prefer the backend-computed flag (covers presets with local overrides
+  // like kimi/moonshot that don't have a pi-ai provider). Fall back to the
+  // legacy piAiProvider check for safety.
+  return selectedPreset.value?.hasKnownModels === true
+    || selectedPreset.value?.piAiProvider != null
 })
 
 const isOAuthProvider = computed(() => {
@@ -640,7 +644,10 @@ function formatSize(bytes: number): string {
 
 async function loadModelsForType(providerType: string) {
   const preset = props.presets[providerType]
-  if (!preset?.piAiProvider) {
+  // Fetch if the preset has either a pi-ai provider or a local override
+  // catalog (both are handled by the backend's getAvailableModels).
+  const hasCatalog = preset?.hasKnownModels === true || preset?.piAiProvider != null
+  if (!hasCatalog) {
     availableModels.value = []
     modelsError.value = null
     return
