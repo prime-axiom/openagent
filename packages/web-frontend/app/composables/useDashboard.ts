@@ -10,6 +10,7 @@ export type OperatingMode = 'normal' | 'fallback'
 
 export interface HealthSnapshot {
   agent: { status: 'running' | 'stopped' }
+  enabled?: boolean
   operatingMode?: OperatingMode
   provider: {
     id: string
@@ -77,6 +78,7 @@ export function useDashboard() {
 
   const health = ref<HealthSnapshot>({
     agent: { status: 'stopped' },
+    enabled: true,
     operatingMode: 'normal',
     provider: null,
     primaryProvider: null,
@@ -107,6 +109,7 @@ export function useDashboard() {
   const providerModel = computed(() => health.value.provider?.model ?? null)
   const providerStatus = computed((): ProviderStatus => health.value.provider?.status ?? 'unconfigured')
   const agentStatus = computed(() => health.value.agent.status)
+  const healthMonitorEnabled = computed((): boolean => health.value.enabled ?? true)
   const operatingMode = computed((): OperatingMode => health.value.operatingMode ?? 'normal')
   const primaryProvider = computed(() => health.value.primaryProvider ?? null)
   const fallbackProviderInfo = computed(() => health.value.fallbackProvider ?? null)
@@ -160,6 +163,7 @@ export function useDashboard() {
     providerModel,
     providerStatus,
     agentStatus,
+    healthMonitorEnabled,
     operatingMode,
     primaryProvider,
     fallbackProviderInfo,

@@ -12,6 +12,7 @@ export type GlobalStatus = 'offline' | 'degraded' | 'healthy'
 type OperatingMode = 'normal' | 'fallback'
 
 interface HealthSnapshot {
+  enabled?: boolean
   operatingMode?: OperatingMode
   provider: {
     name: string
@@ -33,6 +34,7 @@ export function useConnectionStatus() {
   const providerName = useState<string | null>('global_provider_name', () => null)
   const operatingMode = useState<OperatingMode>('global_operating_mode', () => 'normal')
   const fallbackProviderName = useState<string | null>('global_fallback_provider_name', () => null)
+  const healthMonitorEnabled = useState<boolean>('global_health_monitor_enabled', () => true)
 
   let timer: ReturnType<typeof setInterval> | null = null
   let polling = false
@@ -49,6 +51,7 @@ export function useConnectionStatus() {
     try {
       const data = await apiFetch<HealthSnapshot>('/api/health')
 
+      healthMonitorEnabled.value = data.enabled ?? true
       operatingMode.value = data.operatingMode ?? 'normal'
       fallbackProviderName.value = data.fallbackProvider?.name ?? null
 
@@ -100,6 +103,7 @@ export function useConnectionStatus() {
     providerName: readonly(providerName),
     operatingMode: readonly(operatingMode),
     fallbackProviderName: readonly(fallbackProviderName),
+    healthMonitorEnabled: readonly(healthMonitorEnabled),
     start,
     stop,
     poll,
