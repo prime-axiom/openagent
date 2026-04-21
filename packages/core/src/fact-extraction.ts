@@ -2,6 +2,8 @@ import type { Api, Model } from '@mariozechner/pi-ai'
 import { completeSimple } from '@mariozechner/pi-ai'
 import type { Database } from './database.js'
 import { createMemory } from './memories-store.js'
+import type { ProviderConfig } from './provider-config.js'
+import { resolveModelTemperature } from './provider-config.js'
 import { resolveBackgroundReasoning } from './thinking-level.js'
 
 const MAX_FACTS = 10
@@ -176,6 +178,12 @@ export async function extractAndStoreFacts(
   conversationHistory: string,
   model: Model<Api>,
   apiKey: string,
+  /**
+   * Optional provider config owning the model. When supplied, the helper
+   * honors per-model temperature constraints (e.g. Kimi K2 thinking models
+   * require temperature=1). When omitted, temperature defaults to 0.
+   */
+  provider?: Pick<ProviderConfig, 'providerType' | 'models'>,
 ): Promise<{ extracted: number; stored: number; duplicates: number }> {
   const userMessage = `Analyze the following session transcript and extract atomic facts worth remembering:\n\n<transcript>\n${conversationHistory}\n</transcript>`
 
@@ -188,7 +196,7 @@ export async function extractAndStoreFacts(
     }],
   }, {
     apiKey,
-    temperature: 0,
+    temperature: provider ? resolveModelTemperature(provider, model.id, 0) : 0,
     reasoning: resolveBackgroundReasoning(),
   })
 
