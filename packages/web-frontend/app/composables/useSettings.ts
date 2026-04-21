@@ -47,6 +47,8 @@ export function useSettings() {
     }
   }
 
+  const { poll: pollConnectionStatus } = useConnectionStatus()
+
   async function updateSettings(updates: Partial<SettingsUpdateContract>): Promise<boolean> {
     saving.value = true
     error.value = null
@@ -56,6 +58,11 @@ export function useSettings() {
 
       settings.value = normalizeSettingsContract(result)
       successMessage.value = 'saved'
+
+      // Refresh global connection status so the topbar reflects changes
+      // (e.g. Health Monitor enabled/disabled) immediately instead of waiting
+      // for the next 30s poll.
+      void pollConnectionStatus()
       return true
     } catch (err) {
       error.value = (err as Error).message
