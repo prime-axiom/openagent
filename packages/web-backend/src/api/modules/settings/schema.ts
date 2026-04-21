@@ -65,6 +65,11 @@ export function mergeHealthMonitor(
   const existing = (settingsRaw.healthMonitor ?? {}) as Record<string, unknown>
   let changed = false
 
+  if (incoming.enabled !== undefined) {
+    existing.enabled = !!incoming.enabled
+    changed = true
+  }
+
   if (incoming.fallbackTrigger !== undefined) {
     const err = validateEnum(incoming.fallbackTrigger, HEALTH_MONITOR_FALLBACK_TRIGGERS, 'healthMonitor.fallbackTrigger')
     if (err) return { error: err, changed }

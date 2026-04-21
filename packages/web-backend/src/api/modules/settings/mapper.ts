@@ -14,6 +14,7 @@ export interface SettingsResponseContext {
 function buildHealthMonitorResponse(settingsRaw: Record<string, unknown>) {
   const healthMonitor = (settingsRaw.healthMonitor ?? {}) as Record<string, unknown>
   return {
+    enabled: healthMonitor.enabled ?? true,
     fallbackTrigger: healthMonitor.fallbackTrigger ?? 'down',
     failuresBeforeFallback: healthMonitor.failuresBeforeFallback ?? 1,
     recoveryCheckIntervalMinutes: healthMonitor.recoveryCheckIntervalMinutes ?? 1,
