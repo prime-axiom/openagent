@@ -10,6 +10,7 @@ import {
   getAvailableModels,
   buildModel,
   estimateCost,
+  resolveModelTemperature,
   addProvider,
   updateProvider,
   deleteProvider,
@@ -508,5 +509,68 @@ describe('getAvailableModels', () => {
   it('returns empty array for openrouter (no pi-ai mapping)', () => {
     const models = getAvailableModels('openrouter')
     expect(models).toEqual([])
+  })
+
+  it('returns Moonshot platform models for kimi (local override, not pi-ai)', () => {
+    const models = getAvailableModels('kimi')
+    const ids = models.map(m => m.id)
+    // The newly tracked K2 family must be present
+    expect(ids).toContain('kimi-k2.6')
+    expect(ids).toContain('kimi-k2.5')
+    expect(ids).toContain('kimi-k2-0905-preview')
+    expect(ids).toContain('kimi-k2-0711-preview')
+    expect(ids).toContain('kimi-k2-turbo-preview')
+    expect(ids).toContain('kimi-k2-thinking')
+    expect(ids).toContain('kimi-k2-thinking-turbo')
+    // pi-ai's kimi-coding-only ids must NOT leak through
+    expect(ids).not.toContain('kimi-for-coding')
+  })
+
+  it('resolveModelTemperature forces temperature=1 for Kimi K2 thinking models', () => {
+    const provider = {
+      providerType: 'kimi' as const,
+    }
+    // Reasoning-constrained models must override requested temperature
+    expect(resolveModelTemperature(provider, 'kimi-k2.6', 0)).toBe(1)
+    expect(resolveModelTemperature(provider, 'kimi-k2.5', 0.3)).toBe(1)
+    expect(resolveModelTemperature(provider, 'kimi-k2-thinking', 0)).toBe(1)
+    expect(resolveModelTemperature(provider, 'kimi-k2-thinking-turbo', 0)).toBe(1)
+    // Non-reasoning previews keep the caller's temperature
+    expect(resolveModelTemperature(provider, 'kimi-k2-0905-preview', 0)).toBe(0)
+    expect(resolveModelTemperature(provider, 'kimi-k2-turbo-preview', 0.5)).toBe(0.5)
+    // Unknown model id passes through unchanged
+    expect(resolveModelTemperature(provider, 'some-other-model', 0.7)).toBe(0.7)
+  })
+
+  it('resolveModelTemperature respects per-provider models[].fixedTemperature override', () => {
+    const provider = {
+      providerType: 'openai' as const,
+      models: [{ id: 'gpt-custom', fixedTemperature: 0.42 }],
+    }
+    expect(resolveModelTemperature(provider, 'gpt-custom', 0)).toBe(0.42)
+    expect(resolveModelTemperature(provider, 'gpt-4o', 0.8)).toBe(0.8)
+  })
+
+  it('buildModel picks up metadata from override catalog for kimi', () => {
+    const provider = {
+      id: 'test-id',
+      name: 'kimi',
+      type: 'openai-completions',
+      providerType: 'kimi' as const,
+      provider: 'moonshot',
+      baseUrl: 'https://api.moonshot.ai/v1',
+      apiKey: 'sk-test',
+      defaultModel: 'kimi-k2-thinking',
+    }
+    const model = buildModel(provider)
+    expect(model.id).toBe('kimi-k2-thinking')
+    expect(model.name).toBe('Kimi K2 Thinking')
+    expect(model.contextWindow).toBe(262_144)
+    expect(model.reasoning).toBe(true)
+    expect(model.cost.input).toBe(0.6)
+    expect(model.cost.output).toBe(2.5)
+    expect(model.cost.cacheRead).toBe(0.15)
+    expect(model.api).toBe('openai-completions')
+    expect(model.baseUrl).toBe('https://api.moonshot.ai/v1')
   })
 })
