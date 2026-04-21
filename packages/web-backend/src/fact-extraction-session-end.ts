@@ -165,6 +165,7 @@ export function triggerFactExtractionForSessionEnd(options: TriggerFactExtractio
         conversationHistory,
         executionContext.model,
         executionContext.apiKey,
+        executionContext.provider,
       )
 
       deps.console.log(`[fact-extraction] Session ${sessionId}: ${result.stored} new facts`)
