@@ -62,7 +62,7 @@
           </p>
         </div>
 
-        <!-- Provider (only for task type) -->
+        <!-- Provider & Model (only for task type) -->
         <div v-if="form.actionType !== 'injection'" class="space-y-2">
           <Label for="cronjob-provider">{{ $t('cronjobs.form.provider') }}</Label>
           <Select v-model="form.provider">
@@ -72,11 +72,11 @@
             <SelectContent>
               <SelectItem value="">{{ $t('cronjobs.form.defaultProvider') }}</SelectItem>
               <SelectItem
-                v-for="p in providers"
-                :key="p.id"
-                :value="p.name"
+                v-for="opt in providerModelOptions"
+                :key="opt.value"
+                :value="opt.value"
               >
-                {{ p.name }}
+                {{ opt.label }}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -247,6 +247,52 @@ const emit = defineEmits<{
 const { providers, fetchProviders } = useProviders()
 const { agentSkills, fetchAgentSkills } = useSkills()
 
+/**
+ * Convert a stored cronjob provider value into the composite `providerId:modelId`
+ * format used by the select. Accepts:
+ *   - already-composite values (`providerId:modelId`) → returned as-is if provider exists
+ *   - legacy plain provider name or id → expanded to `providerId:defaultModel`
+ *   - empty/null → empty string (falls back to default provider)
+ */
+function normalizeProviderValue(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const colonIdx = raw.indexOf(':')
+  if (colonIdx !== -1) {
+    const providerId = raw.slice(0, colonIdx)
+    const match = providers.value.find(
+      p => p.id === providerId || p.name.toLowerCase() === providerId.toLowerCase(),
+    )
+    if (match) {
+      const modelId = raw.slice(colonIdx + 1) || match.defaultModel
+      return `${match.id}:${modelId}`
+    }
+    return raw
+  }
+  // Legacy: plain provider name or id
+  const match = providers.value.find(
+    p => p.id === raw || p.name.toLowerCase() === raw.toLowerCase(),
+  )
+  if (match) return `${match.id}:${match.defaultModel}`
+  return ''
+}
+
+/** Flattened list of provider+model combinations (matches the Settings page pattern). */
+const providerModelOptions = computed(() => {
+  const options: { value: string; label: string }[] = []
+  for (const p of providers.value) {
+    const models = p.enabledModels && p.enabledModels.length > 0
+      ? p.enabledModels
+      : [p.defaultModel]
+    for (const modelId of models) {
+      options.push({
+        value: `${p.id}:${modelId}`,
+        label: `${p.name} (${modelId})`,
+      })
+    }
+  }
+  return options
+})
+
 const advancedOpen = ref(false)
 
 /** Well-known tools available to task agents */
@@ -303,16 +349,17 @@ function toggleAttachedSkill(skill: string, enabled: boolean) {
   }
 }
 
-watch(() => props.open, (isOpen) => {
+watch(() => props.open, async (isOpen) => {
   if (isOpen) {
-    fetchProviders()
-    fetchAgentSkills()
+    // Providers must be loaded before normalizing the stored provider value,
+    // otherwise legacy "provider name" values cannot be mapped to `providerId:modelId`.
+    await Promise.all([fetchProviders(), fetchAgentSkills()])
     if (props.mode === 'edit' && props.cronjob) {
       form.name = props.cronjob.name
       form.prompt = props.cronjob.prompt
       form.schedule = props.cronjob.schedule
       form.actionType = props.cronjob.actionType ?? 'task'
-      form.provider = props.cronjob.provider ?? ''
+      form.provider = normalizeProviderValue(props.cronjob.provider)
       form.systemPromptOverride = props.cronjob.systemPromptOverride ?? ''
 
       // Parse tool overrides
