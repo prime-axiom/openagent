@@ -81,9 +81,11 @@ export {
   estimateCost,
   parseProviderModelId,
   resolveProviderModelId,
+  resolveModelTemperature,
   DEFAULT_PRICE_TABLE,
   getConfiguredPriceTable,
   PROVIDER_TYPE_PRESETS,
+  PROVIDER_TYPE_MODEL_OVERRIDES,
 } from './provider-config.js'
 export type { ProviderConfig, ProviderModelConfig, ProvidersFile, ProviderType, ProviderTypePreset, AuthMethod, AvailableModel, OAuthCredentialsStored, TokenPriceTable } from './provider-config.js'
 export { encrypt, decrypt, maskApiKey } from './encryption.js'

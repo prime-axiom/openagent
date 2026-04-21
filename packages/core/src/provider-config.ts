@@ -131,7 +131,11 @@ export const PROVIDER_TYPE_PRESETS: Record<ProviderType, ProviderTypePreset> = {
     baseUrl: 'https://api.moonshot.ai/v1',
     requiresApiKey: true,
     urlEditable: false,
-    piAiProvider: 'kimi-coding',
+    // The Moonshot Platform catalog is maintained locally in
+    // PROVIDER_TYPE_MODEL_OVERRIDES below because pi-ai's `kimi-coding`
+    // provider targets a different endpoint (api.kimi.com/coding,
+    // anthropic-messages) and does not list the platform models.
+    piAiProvider: null,
     authMethod: 'api-key',
   },
   zai: {
@@ -210,9 +214,72 @@ export const PROVIDER_TYPE_PRESETS: Record<ProviderType, ProviderTypePreset> = {
 }
 
 /**
- * Get available models for a given provider type from pi-ai
+ * Local catalog overrides for provider types whose model list is not well
+ * represented in pi-ai. Entries here take precedence over pi-ai and also feed
+ * buildModel() with metadata (contextWindow, maxTokens, cost, reasoning) so
+ * the UI and cost estimation work without requiring users to configure each
+ * model manually.
+ *
+ * Keep this list in sync with the upstream provider's published catalog.
+ */
+export const PROVIDER_TYPE_MODEL_OVERRIDES: Partial<Record<ProviderType, ProviderModelConfig[]>> = {
+  // Moonshot Platform API (https://platform.moonshot.ai)
+  // Confirmed via GET https://api.moonshot.ai/v1/models and official pricing docs.
+  // Pricing in USD per 1M tokens.
+  kimi: [
+    // Current K2 family
+    // Note: K2 reasoning models only accept `temperature: 1` (the upstream API
+    // returns "invalid temperature: only 1 is allowed for this model" otherwise).
+    { id: 'kimi-k2.6', name: 'Kimi K2.6', contextWindow: 262_144, maxTokens: 32_768, reasoning: true, fixedTemperature: 1,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+    { id: 'kimi-k2.5', name: 'Kimi K2.5', contextWindow: 262_144, maxTokens: 32_768, reasoning: true, fixedTemperature: 1,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+    { id: 'kimi-k2-thinking', name: 'Kimi K2 Thinking', contextWindow: 262_144, maxTokens: 32_768, reasoning: true, fixedTemperature: 1,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+    { id: 'kimi-k2-thinking-turbo', name: 'Kimi K2 Thinking Turbo', contextWindow: 262_144, maxTokens: 32_768, reasoning: true, fixedTemperature: 1,
+      cost: { input: 2.4, output: 10.0, cacheRead: 0.6, cacheWrite: 0 } },
+    { id: 'kimi-k2-turbo-preview', name: 'Kimi K2 Turbo (preview)', contextWindow: 262_144, maxTokens: 32_768, reasoning: false,
+      cost: { input: 2.4, output: 10.0, cacheRead: 0.6, cacheWrite: 0 } },
+    { id: 'kimi-k2-0905-preview', name: 'Kimi K2 0905 (preview)', contextWindow: 262_144, maxTokens: 32_768, reasoning: false,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+    { id: 'kimi-k2-0711-preview', name: 'Kimi K2 0711 (preview)', contextWindow: 131_072, maxTokens: 32_768, reasoning: false,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+
+    // Convenience alias that always points at the latest stable
+    { id: 'kimi-latest', name: 'Kimi Latest', contextWindow: 131_072, maxTokens: 32_768, reasoning: false,
+      cost: { input: 0.6, output: 2.5, cacheRead: 0.15, cacheWrite: 0 } },
+
+    // Legacy moonshot-v1 line (still available on the platform)
+    { id: 'moonshot-v1-auto', name: 'Moonshot v1 Auto', contextWindow: 131_072, maxTokens: 8_192, reasoning: false,
+      cost: { input: 2.0, output: 5.0 } },
+    { id: 'moonshot-v1-8k', name: 'Moonshot v1 8K', contextWindow: 8_192, maxTokens: 8_192, reasoning: false,
+      cost: { input: 0.2, output: 1.0 } },
+    { id: 'moonshot-v1-32k', name: 'Moonshot v1 32K', contextWindow: 32_768, maxTokens: 8_192, reasoning: false,
+      cost: { input: 0.5, output: 1.5 } },
+    { id: 'moonshot-v1-128k', name: 'Moonshot v1 128K', contextWindow: 131_072, maxTokens: 8_192, reasoning: false,
+      cost: { input: 2.0, output: 5.0 } },
+    { id: 'moonshot-v1-8k-vision-preview', name: 'Moonshot v1 8K Vision (preview)', contextWindow: 8_192, maxTokens: 8_192, reasoning: false,
+      cost: { input: 0.2, output: 1.0 } },
+    { id: 'moonshot-v1-32k-vision-preview', name: 'Moonshot v1 32K Vision (preview)', contextWindow: 32_768, maxTokens: 8_192, reasoning: false,
+      cost: { input: 0.5, output: 1.5 } },
+    { id: 'moonshot-v1-128k-vision-preview', name: 'Moonshot v1 128K Vision (preview)', contextWindow: 131_072, maxTokens: 8_192, reasoning: false,
+      cost: { input: 2.0, output: 5.0 } },
+  ],
+}
+
+/**
+ * Get available models for a given provider type.
+ *
+ * Resolution order:
+ *  1. PROVIDER_TYPE_MODEL_OVERRIDES (local catalog — takes precedence)
+ *  2. pi-ai's generated model list for the preset's piAiProvider
  */
 export function getAvailableModels(providerType: ProviderType): AvailableModel[] {
+  const overrides = PROVIDER_TYPE_MODEL_OVERRIDES[providerType]
+  if (overrides && overrides.length > 0) {
+    return overrides.map(m => ({ id: m.id, name: m.name ?? m.id }))
+  }
+
   const preset = PROVIDER_TYPE_PRESETS[providerType]
   if (!preset?.piAiProvider) {
     return []
@@ -224,6 +291,46 @@ export function getAvailableModels(providerType: ProviderType): AvailableModel[]
   } catch {
     return []
   }
+}
+
+/**
+ * Look up an override model config by provider type and model id, if any.
+ */
+function findOverrideModel(providerType: ProviderType | undefined, modelId: string): ProviderModelConfig | undefined {
+  if (!providerType) return undefined
+  const overrides = PROVIDER_TYPE_MODEL_OVERRIDES[providerType]
+  return overrides?.find(m => m.id === modelId)
+}
+
+/**
+ * Resolve the effective sampling temperature for a given provider+model.
+ *
+ * Some upstream APIs reject any temperature other than a specific value (for
+ * example, Moonshot's Kimi K2 thinking models only accept `temperature: 1`).
+ * Callers should route their desired temperature through this helper so such
+ * constraints are honored without scattering model-specific knowledge across
+ * the codebase.
+ *
+ * Resolution order for the constraint:
+ *   1. `provider.models[].fixedTemperature` (per-provider user override)
+ *   2. `PROVIDER_TYPE_MODEL_OVERRIDES[...].fixedTemperature` (local catalog)
+ *
+ * If no constraint applies, the `requested` value is returned unchanged.
+ */
+export function resolveModelTemperature(
+  provider: Pick<ProviderConfig, 'providerType' | 'models'>,
+  modelId: string,
+  requested: number,
+): number {
+  const configured = provider.models?.find(m => m.id === modelId)
+  if (configured?.fixedTemperature !== undefined) {
+    return configured.fixedTemperature
+  }
+  const override = findOverrideModel(provider.providerType, modelId)
+  if (override?.fixedTemperature !== undefined) {
+    return override.fixedTemperature
+  }
+  return requested
 }
 
 /**
@@ -263,6 +370,13 @@ export interface ProviderModelConfig {
   contextWindow?: number
   maxTokens?: number
   reasoning?: boolean
+  /**
+   * If set, the upstream API only accepts this exact `temperature` value and
+   * rejects any other value (e.g. Moonshot's Kimi K2 thinking models require
+   * `temperature: 1`). Callers should pass the requested value through
+   * `resolveModelTemperature()` so this constraint is honored.
+   */
+  fixedTemperature?: number
   cost?: {
     input: number
     output: number
@@ -900,8 +1014,11 @@ export function buildModel(provider: ProviderConfig, modelId?: string): Model<Ap
     }
   }
 
-  // Generic build for API key providers or fallback
+  // Generic build for API key providers or fallback.
+  // Resolution for per-model metadata: provider.models (user override) → local
+  // PROVIDER_TYPE_MODEL_OVERRIDES catalog → configured price table → zero.
   const modelConfig = provider.models?.find(m => m.id === id)
+    ?? findOverrideModel(provider.providerType, id)
   const priceFallback = getConfiguredPriceTable()[id] ?? { input: 0, output: 0 }
 
   // For Anthropic providers, set the user-agent header to advertise as Claude Code CLI
