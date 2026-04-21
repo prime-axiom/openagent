@@ -44,8 +44,8 @@ COPY packages/telegram/package.json packages/telegram/
 COPY packages/web-backend/package.json packages/web-backend/
 COPY packages/web-frontend/package.json packages/web-frontend/
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (include devDependencies for TypeScript type declarations)
+RUN npm ci --include=dev
 
 # Copy source code
 COPY . .
