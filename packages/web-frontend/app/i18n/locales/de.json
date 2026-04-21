@@ -880,6 +880,9 @@
       "skillOverrides": "Skill-Überschreibungen",
       "skillOverridesHelp": "Aktivieren oder deaktivieren Sie einzelne Skills für diesen Cronjob. Deaktivierte Skills werden vom Task-Agenten ausgeschlossen.",
       "noSkills": "Keine Skills verfügbar.",
+      "attachedSkills": "Angehängte Skills",
+      "attachedSkillsHelp": "Agent-Skills, deren SKILL.md beim Auslösen dieses Cronjobs direkt in den Task-Prompt eingefügt wird. Nützlich für Skills, die der Cronjob immer benötigt (z.B. nitter, wiki).",
+      "noAgentSkills": "Keine Agent-Skills gefunden.",
       "systemPromptOverride": "System-Prompt-Überschreibung",
       "systemPromptOverrideHelp": "Wenn gesetzt, ersetzt dies den Standard-System-Prompt des Task-Agenten vollständig.",
       "systemPromptPlaceholder": "Du bist ein Hintergrund-Task-Agent. Deine Aufgabe: ...\n\nLeer lassen, um den Standard-System-Prompt zu verwenden."
@@ -887,7 +890,8 @@
     "badges": {
       "customTools": "eigene Tools",
       "customSkills": "eigene Skills",
-      "customPrompt": "eigener Prompt"
+      "customPrompt": "eigener Prompt",
+      "attachedSkillTooltip": "Angehängter Skill: {name}"
     }
   },
   "taskViewer": {

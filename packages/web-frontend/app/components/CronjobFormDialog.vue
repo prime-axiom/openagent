@@ -153,6 +153,42 @@
 
             <Separator />
 
+            <!-- Attached Skills -->
+            <div class="space-y-3">
+              <Label>{{ $t('cronjobs.form.attachedSkills') }}</Label>
+              <p class="text-xs text-muted-foreground">
+                {{ $t('cronjobs.form.attachedSkillsHelp') }}
+              </p>
+              <div v-if="availableAgentSkillNames.length > 0" class="space-y-2">
+                <div
+                  v-for="skill in availableAgentSkillNames"
+                  :key="`attached-${skill}`"
+                  class="flex items-center justify-between py-1"
+                >
+                  <span class="text-sm font-mono">{{ skill }}</span>
+                  <Switch
+                    :checked="attachedSkills.includes(skill)"
+                    @update:checked="(val: boolean) => toggleAttachedSkill(skill, val)"
+                  />
+                </div>
+                <div v-if="attachedSkills.length > 0" class="flex flex-wrap gap-1.5 pt-1">
+                  <Badge
+                    v-for="skill in attachedSkills"
+                    :key="`attached-selected-${skill}`"
+                    variant="secondary"
+                    class="text-xs font-normal"
+                  >
+                    📎 {{ skill }}
+                  </Badge>
+                </div>
+              </div>
+              <p v-else class="text-xs text-muted-foreground italic">
+                {{ $t('cronjobs.form.noAgentSkills') }}
+              </p>
+            </div>
+
+            <Separator />
+
             <!-- System Prompt Override -->
             <div class="space-y-2">
               <Label for="cronjob-system-prompt">{{ $t('cronjobs.form.systemPromptOverride') }}</Label>
@@ -204,10 +240,12 @@ const emit = defineEmits<{
     toolsOverride?: string | null
     skillsOverride?: string | null
     systemPromptOverride?: string | null
+    attachedSkills?: string[] | null
   }]
 }>()
 
 const { providers, fetchProviders } = useProviders()
+const { agentSkills, fetchAgentSkills } = useSkills()
 
 const advancedOpen = ref(false)
 
@@ -241,16 +279,34 @@ const form = reactive({
 
 const disabledTools = ref<string[]>([])
 const disabledSkills = ref<string[]>([])
+const attachedSkills = ref<string[]>([])
+
+/** List of agent skill names available for the attached-skills picker. */
+const availableAgentSkillNames = computed<string[]>(() =>
+  (agentSkills.value ?? []).map(s => s.name).sort((a, b) => a.localeCompare(b)),
+)
 
 const hasOverrides = computed(() => {
   return disabledTools.value.length > 0
     || disabledSkills.value.length > 0
+    || attachedSkills.value.length > 0
     || (form.systemPromptOverride && form.systemPromptOverride.trim().length > 0)
 })
+
+function toggleAttachedSkill(skill: string, enabled: boolean) {
+  if (enabled) {
+    if (!attachedSkills.value.includes(skill)) {
+      attachedSkills.value = [...attachedSkills.value, skill]
+    }
+  } else {
+    attachedSkills.value = attachedSkills.value.filter(s => s !== skill)
+  }
+}
 
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
     fetchProviders()
+    fetchAgentSkills()
     if (props.mode === 'edit' && props.cronjob) {
       form.name = props.cronjob.name
       form.prompt = props.cronjob.prompt
@@ -281,9 +337,15 @@ watch(() => props.open, (isOpen) => {
         disabledSkills.value = []
       }
 
+      // Attached skills (array on the cronjob)
+      attachedSkills.value = Array.isArray(props.cronjob.attachedSkills)
+        ? [...props.cronjob.attachedSkills]
+        : []
+
       // Auto-expand advanced section if there are overrides
       advancedOpen.value = disabledTools.value.length > 0
         || disabledSkills.value.length > 0
+        || attachedSkills.value.length > 0
         || (form.systemPromptOverride?.trim().length ?? 0) > 0
     } else {
       form.name = ''
@@ -294,6 +356,7 @@ watch(() => props.open, (isOpen) => {
       form.systemPromptOverride = ''
       disabledTools.value = []
       disabledSkills.value = []
+      attachedSkills.value = []
       advancedOpen.value = false
     }
   }
@@ -333,6 +396,9 @@ function onSubmit() {
       disabledSkills.value.length > 0 ? JSON.stringify(disabledSkills.value) : null
     ),
     systemPromptOverride: form.actionType === 'injection' ? null : (form.systemPromptOverride?.trim() || null),
+    attachedSkills: form.actionType === 'injection'
+      ? null
+      : (attachedSkills.value.length > 0 ? [...attachedSkills.value] : null),
   })
 }
 </script>

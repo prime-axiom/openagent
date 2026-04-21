@@ -94,8 +94,8 @@
               class="cursor-pointer"
               @click="openEditCronjob(cj)"
             >
-              <TableCell class="max-w-[200px] font-medium">
-                <div class="flex items-center gap-1.5">
+              <TableCell class="max-w-[260px] font-medium">
+                <div class="flex flex-wrap items-center gap-1.5">
                   <span class="truncate">{{ cj.name }}</span>
                   <Badge v-if="cj.toolsOverride" variant="outline" class="shrink-0 text-xs">
                     {{ $t('cronjobs.badges.customTools') }}
@@ -105,6 +105,15 @@
                   </Badge>
                   <Badge v-if="cj.systemPromptOverride" variant="outline" class="shrink-0 text-xs">
                     {{ $t('cronjobs.badges.customPrompt') }}
+                  </Badge>
+                  <Badge
+                    v-for="skill in cj.attachedSkills || []"
+                    :key="`attached-${skill}`"
+                    variant="secondary"
+                    class="shrink-0 text-xs font-normal"
+                    :title="$t('cronjobs.badges.attachedSkillTooltip', { name: skill })"
+                  >
+                    📎 {{ skill }}
                   </Badge>
                 </div>
               </TableCell>
@@ -235,7 +244,7 @@ function openEditCronjob(cj: Cronjob) {
   cronjobDialog.open = true
 }
 
-async function handleCronjobSubmit(form: { name: string; prompt: string; schedule: string; actionType?: 'task' | 'injection'; provider?: string; toolsOverride?: string | null; skillsOverride?: string | null; systemPromptOverride?: string | null }) {
+async function handleCronjobSubmit(form: { name: string; prompt: string; schedule: string; actionType?: 'task' | 'injection'; provider?: string; toolsOverride?: string | null; skillsOverride?: string | null; systemPromptOverride?: string | null; attachedSkills?: string[] | null }) {
   cronjobDialog.loading = true
 
   if (cronjobDialog.mode === 'create') {

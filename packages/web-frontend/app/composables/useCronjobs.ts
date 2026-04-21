@@ -12,6 +12,7 @@ export interface Cronjob {
   toolsOverride: string | null
   skillsOverride: string | null
   systemPromptOverride: string | null
+  attachedSkills: string[] | null
   lastRunAt: string | null
   lastRunTaskId: string | null
   lastRunStatus: string | null
@@ -37,6 +38,7 @@ export interface CronjobFormData {
   toolsOverride?: string | null
   skillsOverride?: string | null
   systemPromptOverride?: string | null
+  attachedSkills?: string[] | null
 }
 
 export function useCronjobs() {
