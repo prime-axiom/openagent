@@ -1,12 +1,18 @@
 import { Router } from 'express'
 import type { Database, TaskRuntimeScheduleBoundary } from '@openagent/core'
-import { ScheduledTaskStore, validateCronExpression, cronToHumanReadable } from '@openagent/core'
+import { ScheduledTaskStore, validateCronExpression, cronToHumanReadable, loadSkills, listAgentSkills } from '@openagent/core'
 import { jwtMiddleware } from '../auth.js'
 import type { AuthenticatedRequest } from '../auth.js'
 
 export interface CronjobsRouterOptions {
   db: Database
   getTaskRuntime?: () => TaskRuntimeScheduleBoundary | null
+  /**
+   * Returns the tool names currently available to background task agents.
+   * Injected from the runtime composition so the cronjob UI can render a
+   * live list of toggleable tools instead of a hardcoded copy.
+   */
+  getBackgroundTaskToolNames?: () => string[]
 }
 
 export function createCronjobsRouter(options: CronjobsRouterOptions): Router {
@@ -16,6 +22,50 @@ export function createCronjobsRouter(options: CronjobsRouterOptions): Router {
   const getTaskRuntime = (): TaskRuntimeScheduleBoundary | null => options.getTaskRuntime?.() ?? null
 
   router.use(jwtMiddleware)
+
+  /**
+   * GET /api/cronjobs/meta
+   * Returns the live lists used by the cronjob form's "Advanced Configuration"
+   * section: tool names the task agent can run, installed skills (so users can
+   * disable them per-cronjob), and agent skills (so users can attach their
+   * SKILL.md verbatim to the task prompt).
+   *
+   * Kept as a single round-trip so opening the dialog stays snappy.
+   */
+  router.get('/meta', (_req: AuthenticatedRequest, res) => {
+    try {
+      const tools = options.getBackgroundTaskToolNames?.() ?? []
+
+      let installedSkills: Array<{ id: string; name: string; description: string; emoji?: string; enabled: boolean }> = []
+      try {
+        const file = loadSkills()
+        installedSkills = file.skills.map(s => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          emoji: s.emoji,
+          enabled: s.enabled,
+        }))
+      } catch {
+        installedSkills = []
+      }
+
+      let agentSkills: Array<{ name: string; description: string }> = []
+      try {
+        agentSkills = listAgentSkills().map(s => ({ name: s.name, description: s.description }))
+      } catch {
+        agentSkills = []
+      }
+
+      res.json({
+        tools,
+        installedSkills,
+        agentSkills,
+      })
+    } catch (err) {
+      res.status(500).json({ error: `Failed to load cronjob meta: ${(err as Error).message}` })
+    }
+  })
 
   /**
    * GET /api/cronjobs
