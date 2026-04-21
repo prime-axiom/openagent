@@ -43,6 +43,12 @@ export interface AppOptions {
   onTelegramSettingsChanged?: () => void
   onActiveProviderChanged?: () => void
   getTaskRuntime?: () => TaskRuntimeBoundary | null
+  /**
+   * Returns the names of the tools available to background task agents.
+   * Used by the cronjob UI to render the tool-override list dynamically.
+   * If omitted, the meta endpoint falls back to an empty list.
+   */
+  getBackgroundTaskToolNames?: () => string[]
   taskEventBus?: TaskEventBus | null
 }
 
@@ -131,6 +137,7 @@ export function createApp(options?: AppOptions): express.Express {
     app.use('/api/cronjobs', createCronjobsRouter({
       db: options.db,
       getTaskRuntime: () => options.getTaskRuntime?.()?.schedules ?? null,
+      getBackgroundTaskToolNames: options.getBackgroundTaskToolNames,
     }))
     app.use('/api/secrets', createSecretsRouter())
     app.use('/api/tts', createTtsRouter())
