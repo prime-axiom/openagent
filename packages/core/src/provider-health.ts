@@ -1,6 +1,6 @@
 import type { Database } from './database.js'
 import type { ProviderConfig } from './provider-config.js'
-import { buildModel, getApiKeyForProvider, PROVIDER_TYPE_PRESETS } from './provider-config.js'
+import { buildModel, getApiKeyForProvider, PROVIDER_TYPE_PRESETS, resolveModelTemperature } from './provider-config.js'
 import { completeSimple } from '@mariozechner/pi-ai'
 
 export type ProviderHealthStatus = 'healthy' | 'degraded' | 'down' | 'unconfigured'
@@ -74,7 +74,7 @@ function buildOpenAiCompatibleRequest(provider: ProviderConfig): {
     body: {
       model: provider.defaultModel,
       max_completion_tokens: 5,
-      temperature: 0,
+      temperature: resolveModelTemperature(provider, provider.defaultModel, 0),
       messages: [{ role: 'user', content: 'Respond with OK only.' }],
     },
   }
@@ -158,7 +158,7 @@ async function performPiAiHealthCheck(
       }, {
         apiKey,
         maxTokens: 5,
-        temperature: 0,
+        temperature: resolveModelTemperature(provider, provider.defaultModel, 0),
         signal: controller.signal,
       })
 
