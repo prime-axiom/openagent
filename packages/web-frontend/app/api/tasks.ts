@@ -7,6 +7,13 @@ export interface Task {
   triggerSourceId: string | null
   provider: string | null
   model: string | null
+  /**
+   * `true` when the task ran on the configured Task Default provider/model,
+   * `false` when an explicit (provider, model) was passed through
+   * `create_task`, a cronjob, etc. `null` for legacy rows that predate this
+   * column.
+   */
+  isDefaultModel: boolean | null
   maxDurationMinutes: number | null
   promptTokens: number
   completionTokens: number
