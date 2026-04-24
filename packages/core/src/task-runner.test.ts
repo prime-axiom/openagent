@@ -362,6 +362,85 @@ describe('TaskRunner', () => {
     })
   })
 
+  describe('zombie task handling', () => {
+    it('abortTask finalizes a running DB row even when not in runningTasks map', () => {
+      // Simulate a "zombie" task: status='running' in DB but never registered
+      // with the runner (e.g. the process restarted, or startTask threw
+      // before runTaskAsync took over). Kill button must still work.
+      const task = store.create({
+        name: 'Zombie Task',
+        prompt: 'never actually ran',
+        triggerType: 'cronjob',
+      })
+
+      expect(task.status).toBe('running')
+      expect(runner.isRunning(task.id)).toBe(false)
+
+      runner.abortTask(task.id, 'Killed by user from web UI')
+
+      const updated = store.getById(task.id)!
+      expect(updated.status).toBe('failed')
+      expect(updated.resultStatus).toBe('failed')
+      expect(updated.errorMessage).toBe('Killed by user from web UI')
+      expect(updated.completedAt).toBeTruthy()
+    })
+
+    it('abortTask is a no-op on already-finalized tasks', () => {
+      const task = store.create({
+        name: 'Already Done',
+        prompt: 'x',
+        triggerType: 'agent',
+      })
+      const completedAt = '2025-01-01 00:00:00'
+      store.update(task.id, {
+        status: 'completed',
+        resultStatus: 'completed',
+        resultSummary: 'Done',
+        completedAt,
+      })
+
+      runner.abortTask(task.id, 'late kill')
+
+      const after = store.getById(task.id)!
+      expect(after.status).toBe('completed')
+      expect(after.resultSummary).toBe('Done')
+      expect(after.completedAt).toBe(completedAt)
+    })
+
+    it('startTask marks task as failed when setup throws', async () => {
+      const failingRunner = new TaskRunner({
+        db,
+        buildModel: () => {
+          throw new Error('provider misconfigured')
+        },
+        getApiKey: async () => 'test-key',
+        tools: [],
+        memoryDir: undefined,
+        sessionManager,
+        onTaskComplete: () => {},
+        onTaskPaused: () => {},
+      })
+
+      const task = store.create({
+        name: 'Broken Provider Task',
+        prompt: 'should fail at startup',
+        triggerType: 'agent',
+      })
+      expect(task.status).toBe('running')
+
+      await expect(failingRunner.startTask(task, mockProvider)).rejects.toThrow('provider misconfigured')
+
+      const after = store.getById(task.id)!
+      expect(after.status).toBe('failed')
+      expect(after.resultStatus).toBe('failed')
+      expect(after.errorMessage).toContain('provider misconfigured')
+      expect(after.completedAt).toBeTruthy()
+      expect(failingRunner.isRunning(task.id)).toBe(false)
+
+      failingRunner.dispose()
+    })
+  })
+
   describe('pause/resume lifecycle', () => {
     it('pauses a task when agent outputs STATUS: question', async () => {
       const { Agent } = await import('@mariozechner/pi-agent-core')

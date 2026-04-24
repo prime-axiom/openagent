@@ -375,100 +375,125 @@ export class TaskRunner {
     parentSessionId?: string | null,
   ): Promise<string> {
     const taskId = task.id
-    const sessionId = this.ensureTaskSession(task, parentSessionId)
 
-    // Build model and get API key
-    const model = this.options.buildModel(provider)
-    const apiKey = await this.options.getApiKey(provider)
+    try {
+      const sessionId = this.ensureTaskSession(task, parentSessionId)
 
-    // Determine effective system prompt
-    const baseSystemPrompt = overrides?.systemPromptOverride
-      ? overrides.systemPromptOverride
-      : buildTaskSystemPrompt(task.prompt, this.options.memoryDir)
+      // Build model and get API key
+      const model = this.options.buildModel(provider)
+      const apiKey = await this.options.getApiKey(provider)
 
-    // Inject attached-skills block (before the base prompt) so skill rules are
-    // anchored at the top and apply regardless of the rest of the prompt.
-    const attachedSkillsBlock = renderAttachedSkillsBlock(overrides?.attachedSkills ?? null)
-    const systemPrompt = attachedSkillsBlock
-      ? `${attachedSkillsBlock}\n\n${baseSystemPrompt}`
-      : baseSystemPrompt
+      // Determine effective system prompt
+      const baseSystemPrompt = overrides?.systemPromptOverride
+        ? overrides.systemPromptOverride
+        : buildTaskSystemPrompt(task.prompt, this.options.memoryDir)
 
-    // Determine effective tools (filter out disabled tools)
-    let effectiveTools = this.options.tools
-    if (overrides?.toolsOverride) {
-      try {
-        const disabledTools: string[] = JSON.parse(overrides.toolsOverride)
-        if (Array.isArray(disabledTools) && disabledTools.length > 0) {
-          effectiveTools = effectiveTools.filter(t => !disabledTools.includes(t.name))
+      // Inject attached-skills block (before the base prompt) so skill rules are
+      // anchored at the top and apply regardless of the rest of the prompt.
+      const attachedSkillsBlock = renderAttachedSkillsBlock(overrides?.attachedSkills ?? null)
+      const systemPrompt = attachedSkillsBlock
+        ? `${attachedSkillsBlock}\n\n${baseSystemPrompt}`
+        : baseSystemPrompt
+
+      // Determine effective tools (filter out disabled tools)
+      let effectiveTools = this.options.tools
+      if (overrides?.toolsOverride) {
+        try {
+          const disabledTools: string[] = JSON.parse(overrides.toolsOverride)
+          if (Array.isArray(disabledTools) && disabledTools.length > 0) {
+            effectiveTools = effectiveTools.filter(t => !disabledTools.includes(t.name))
+          }
+        } catch {
+          // Invalid JSON — use all tools
         }
-      } catch {
-        // Invalid JSON — use all tools
       }
+
+      // Create isolated PiAgent
+      const agent = new PiAgent({
+        initialState: {
+          systemPrompt,
+          model,
+          tools: effectiveTools,
+          thinkingLevel: this.resolveBackgroundThinkingLevel(),
+        },
+        getApiKey: () => apiKey,
+      })
+
+      const abortController = new AbortController()
+
+      const runningTask: RunningTask = {
+        taskId,
+        agent,
+        abortController,
+        timeoutTimer: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        estimatedCost: 0,
+        toolCallCount: 0,
+        toolCallTimers: new Map(),
+        toolCallArgs: new Map(),
+        toolCallTracker: new ToolCallTracker(),
+        statusUpdateTimer: null,
+        startedAtMs: Date.now(),
+      }
+
+      // Set up max duration timeout
+      if (task.maxDurationMinutes && task.maxDurationMinutes > 0) {
+        runningTask.timeoutTimer = setTimeout(() => {
+          this.abortTask(taskId, 'Max duration exceeded')
+        }, task.maxDurationMinutes * 60 * 1000)
+      }
+
+      // Set up periodic status updates
+      const statusIntervalMinutes = this.options.statusUpdateIntervalMinutes ?? 10
+      if (statusIntervalMinutes > 0 && this.options.onStatusUpdate) {
+        runningTask.statusUpdateTimer = setInterval(() => {
+          this.emitStatusUpdate(runningTask, task)
+        }, statusIntervalMinutes * 60 * 1000)
+      }
+
+      this.runningTasks.set(taskId, runningTask)
+
+      // Update task as started
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+      this.store.update(taskId, {
+        startedAt: now,
+        provider: provider.name,
+        model: provider.defaultModel,
+      })
+
+      // Subscribe to agent events for token/tool tracking
+      const unsubscribe = agent.subscribe((event: AgentEvent) => {
+        this.handleTaskEvent(runningTask, event, sessionId, model)
+      })
+
+      // Run the task asynchronously
+      this.runTaskAsync(runningTask, unsubscribe, sessionId)
+
+      return taskId
+    } catch (err) {
+      // Startup failed before `runTaskAsync` could take over error handling
+      // (e.g. invalid provider config, missing API key, model build error).
+      // Without this, the task row stays stuck at status='running' forever
+      // and cannot be killed from the UI (abortTask silently no-ops for
+      // tasks not in the runningTasks Map).
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+      try {
+        this.store.update(taskId, {
+          status: 'failed',
+          resultStatus: 'failed',
+          resultSummary: `Task failed to start: ${errorMessage}`,
+          errorMessage,
+          completedAt: now,
+        })
+      } catch (updateErr) {
+        console.error(`[task-runner] Failed to mark task ${taskId} as failed after start error:`, updateErr)
+      }
+      // Clean up any partial state that may have been registered before the throw.
+      this.cleanupRunningTask(taskId)
+      throw err
     }
-
-    // Create isolated PiAgent
-    const agent = new PiAgent({
-      initialState: {
-        systemPrompt,
-        model,
-        tools: effectiveTools,
-        thinkingLevel: this.resolveBackgroundThinkingLevel(),
-      },
-      getApiKey: () => apiKey,
-    })
-
-    const abortController = new AbortController()
-
-    const runningTask: RunningTask = {
-      taskId,
-      agent,
-      abortController,
-      timeoutTimer: null,
-      promptTokens: 0,
-      completionTokens: 0,
-      estimatedCost: 0,
-      toolCallCount: 0,
-      toolCallTimers: new Map(),
-      toolCallArgs: new Map(),
-      toolCallTracker: new ToolCallTracker(),
-      statusUpdateTimer: null,
-      startedAtMs: Date.now(),
-    }
-
-    // Set up max duration timeout
-    if (task.maxDurationMinutes && task.maxDurationMinutes > 0) {
-      runningTask.timeoutTimer = setTimeout(() => {
-        this.abortTask(taskId, 'Max duration exceeded')
-      }, task.maxDurationMinutes * 60 * 1000)
-    }
-
-    // Set up periodic status updates
-    const statusIntervalMinutes = this.options.statusUpdateIntervalMinutes ?? 10
-    if (statusIntervalMinutes > 0 && this.options.onStatusUpdate) {
-      runningTask.statusUpdateTimer = setInterval(() => {
-        this.emitStatusUpdate(runningTask, task)
-      }, statusIntervalMinutes * 60 * 1000)
-    }
-
-    this.runningTasks.set(taskId, runningTask)
-
-    // Update task as started
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
-    this.store.update(taskId, {
-      startedAt: now,
-      provider: provider.name,
-      model: provider.defaultModel,
-    })
-
-    // Subscribe to agent events for token/tool tracking
-    const unsubscribe = agent.subscribe((event: AgentEvent) => {
-      this.handleTaskEvent(runningTask, event, sessionId, model)
-    })
-
-    // Run the task asynchronously
-    this.runTaskAsync(runningTask, unsubscribe, sessionId)
-
-    return taskId
   }
 
   /**
@@ -958,17 +983,51 @@ Hint: Use /kill_task ${task.id} if the task needs to be cleaned up.
   }
 
   /**
-   * Abort a running task
+   * Abort a running task.
+   *
+   * Also handles "zombie" tasks — rows where `status='running'` in the DB
+   * but no matching entry exists in `this.runningTasks` (e.g. the task
+   * failed during `startTask` setup before `runTaskAsync` took over, or
+   * the process restarted without recovering the task). Without this, the
+   * UI kill button would silently no-op on those rows.
    */
   abortTask(taskId: string, reason: string = 'Aborted by user'): void {
     const runningTask = this.runningTasks.get(taskId)
-    if (!runningTask) return
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+
+    if (!runningTask) {
+      // Zombie task: no in-memory state to tear down, but we still need to
+      // clear the DB row so the UI reflects the kill and the row no longer
+      // counts as running.
+      const existing = this.store.getById(taskId)
+      if (!existing || existing.status !== 'running') {
+        // Nothing to do — already finalized, paused (handled separately),
+        // or not present at all.
+        return
+      }
+
+      this.store.update(taskId, {
+        status: 'failed',
+        resultStatus: 'failed',
+        resultSummary: reason,
+        errorMessage: reason,
+        completedAt: now,
+      })
+
+      const task = this.store.getById(taskId)
+      if (task) {
+        const startedAt = task.startedAt ? new Date(task.startedAt).getTime() : Date.now()
+        const durationMinutes = Math.round((Date.now() - startedAt) / 60000)
+        const injection = formatTaskInjection(task, durationMinutes)
+        this.notifyTaskComplete(taskId, injection, 'failed', reason)
+      }
+      return
+    }
 
     // Abort the agent
     runningTask.agent.abort()
     this.cleanupRunningTask(taskId)
 
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
     this.store.update(taskId, {
       status: 'failed',
       resultStatus: 'failed',
