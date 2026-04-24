@@ -1,10 +1,13 @@
 import type { Response } from 'express'
 import type { AuthenticatedRequest } from '../../../auth.js'
 import { mapTaskEventsResponse, mapTaskResponse, mapTasksListResponse } from './mapper.js'
-import { parseListTasksQuery, parseTaskIdParam } from './schema.js'
+import { parseListTasksQuery, parseRestartTaskBody, parseTaskIdParam } from './schema.js'
 import {
   TaskCannotBeKilledError,
+  TaskCannotBeRestartedError,
   TaskNotFoundError,
+  TaskRestartProviderError,
+  TaskRuntimeUnavailableError,
   type TasksService,
 } from './service.js'
 
@@ -13,6 +16,7 @@ export interface TasksController {
   getTaskById: (req: AuthenticatedRequest, res: Response) => void
   getTaskEvents: (req: AuthenticatedRequest, res: Response) => void
   killTask: (req: AuthenticatedRequest, res: Response) => void
+  restartTask: (req: AuthenticatedRequest, res: Response) => Promise<void>
 }
 
 export function createTasksController(service: TasksService): TasksController {
@@ -87,6 +91,42 @@ export function createTasksController(service: TasksService): TasksController {
         }
 
         res.status(500).json({ error: `Failed to kill task: ${(err as Error).message}` })
+      }
+    },
+
+    async restartTask(req, res) {
+      try {
+        const id = parseTaskIdParam(req.params.id)
+        const parsed = parseRestartTaskBody(req.body)
+        if (!parsed.ok) {
+          res.status(400).json({ error: parsed.error })
+          return
+        }
+
+        const task = await service.restartTask(id, parsed.value)
+        res.status(201).json(mapTaskResponse(task))
+      } catch (err) {
+        if (err instanceof TaskNotFoundError) {
+          res.status(404).json({ error: err.message })
+          return
+        }
+
+        if (err instanceof TaskCannotBeRestartedError) {
+          res.status(409).json({ error: err.message })
+          return
+        }
+
+        if (err instanceof TaskRestartProviderError) {
+          res.status(400).json({ error: err.message })
+          return
+        }
+
+        if (err instanceof TaskRuntimeUnavailableError) {
+          res.status(503).json({ error: err.message })
+          return
+        }
+
+        res.status(500).json({ error: `Failed to restart task: ${(err as Error).message}` })
       }
     },
   }

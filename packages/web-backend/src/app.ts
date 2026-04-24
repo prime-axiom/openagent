@@ -21,7 +21,7 @@ import { createCronjobsRouter } from './routes/cronjobs.js'
 import { createSecretsRouter } from './routes/secrets.js'
 import { createTtsRouter } from './routes/tts.js'
 import { createSttRouter } from './routes/stt.js'
-import type { TaskRuntimeBoundary, TaskEventBus, AgentHeartbeatService } from '@openagent/core'
+import type { ProviderConfig, TaskRuntimeBoundary, TaskEventBus, AgentHeartbeatService } from '@openagent/core'
 import { ensureAdminUser } from './auth.js'
 import type { HealthMonitorService } from './health-monitor.js'
 import type { RuntimeMetrics } from './runtime-metrics.js'
@@ -43,6 +43,17 @@ export interface AppOptions {
   onTelegramSettingsChanged?: () => void
   onActiveProviderChanged?: () => void
   getTaskRuntime?: () => TaskRuntimeBoundary | null
+  /**
+   * Look up a provider by id/name. Used by the tasks restart endpoint to
+   * resolve the (optionally overridden) provider the user picked in the
+   * edit form.
+   */
+  resolveProvider?: (nameOrId: string) => ProviderConfig | null
+  /**
+   * Configured task default provider. Used by the tasks restart endpoint
+   * when neither the user nor the original task pinned a provider/model.
+   */
+  getTaskDefaultProvider?: () => ProviderConfig | null
   /**
    * Returns the names of the tools available to background task agents.
    * Used by the cronjob UI to render the tool-override list dynamically.
@@ -133,6 +144,8 @@ export function createApp(options?: AppOptions): express.Express {
     app.use('/api/tasks', createTasksRouter({
       db: options.db,
       getTaskRuntime: () => options.getTaskRuntime?.()?.tasks ?? null,
+      resolveProvider: options.resolveProvider,
+      getDefaultProvider: options.getTaskDefaultProvider,
     }))
     app.use('/api/cronjobs', createCronjobsRouter({
       db: options.db,

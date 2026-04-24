@@ -925,6 +925,20 @@
     "agentResponse": "Agent response",
     "thinking": "Thinking",
     "resultSummary": "Task Result",
-    "noSummary": "Task completed without summary."
+    "noSummary": "Task completed without summary.",
+    "restartButton": "Edit & restart",
+    "restartButtonHint": "Edit the prompt / provider and start a fresh run. The original task stays in history.",
+    "restartDisabled": {
+      "running": "Kill the task before restarting it.",
+      "paused": "Paused tasks cannot be restarted — resume them instead."
+    },
+    "restartFormTitle": "Edit & restart task",
+    "restartTriggerNotice": "The original task was triggered by {trigger}. The restarted run is stored as a user-triggered task and will not be re-attached to its original schedule.",
+    "restartSubmit": "Save & restart",
+    "fieldName": "Name",
+    "fieldPrompt": "Prompt",
+    "fieldProvider": "Provider / Model",
+    "fieldProviderDefault": "Use task default",
+    "fieldMaxDuration": "Max duration (minutes)"
   }
 }

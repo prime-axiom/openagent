@@ -46,7 +46,12 @@ export interface TaskInfo {
   id: string
   name: string
   status: string
+  triggerType?: 'user' | 'agent' | 'cronjob' | 'heartbeat' | 'consolidation'
   prompt?: string | null
+  provider?: string | null
+  model?: string | null
+  isDefaultModel?: boolean | null
+  maxDurationMinutes?: number | null
   resultSummary?: string | null
   errorMessage?: string | null
 }
@@ -112,10 +117,35 @@ export function useTasksApi() {
     return apiFetch<TaskResponse>(`/api/tasks/${taskId}/kill`, { method: 'POST' })
   }
 
+  async function restartTask(
+    taskId: string,
+    payload: RestartTaskPayload = {},
+  ): Promise<TaskResponse> {
+    return apiFetch<TaskResponse>(`/api/tasks/${taskId}/restart`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   return {
     listTasks,
     getTask,
     getTaskEvents,
     killTask,
+    restartTask,
   }
+}
+
+/**
+ * Payload for `POST /api/tasks/:id/restart`. Any omitted field inherits
+ * from the original task. `provider` is the composite `providerId:modelId`
+ * (as selected in the UI) or just a provider id / name for legacy values.
+ */
+export interface RestartTaskPayload {
+  name?: string
+  prompt?: string
+  provider?: string
+  model?: string
+  maxDurationMinutes?: number
 }

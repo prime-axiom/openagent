@@ -244,4 +244,99 @@ describe('tasks route module', () => {
     expect(blockedKillRes.status).toBe(400)
     expect(blockedKillBody.error).toBe("Cannot kill task with status 'completed'. Only running tasks can be killed.")
   })
+
+  describe('restart endpoint', () => {
+    it('returns 404 when the original task does not exist', async () => {
+      const res = await fetch(`${baseUrl}/api/tasks/nope/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 409 when the original task is still running', async () => {
+      const task = createTask({ name: 'Still running' })
+
+      const res = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const body = await res.json() as { error: string }
+      expect(res.status).toBe(409)
+      expect(body.error).toContain("status 'running'")
+      expect(body.error).toContain('Kill the task first')
+    })
+
+    it('returns 409 when the original task is paused', async () => {
+      const store = new TaskStore(db)
+      const task = createTask({ name: 'Paused task' })
+      store.update(task.id, { status: 'paused', resultStatus: 'question' })
+
+      const res = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      expect(res.status).toBe(409)
+    })
+
+    it('returns 400 when the body has invalid fields', async () => {
+      const store = new TaskStore(db)
+      const task = createTask({ name: 'Failed task' })
+      store.update(task.id, {
+        status: 'failed',
+        resultStatus: 'failed',
+        completedAt: '2026-03-27 10:00:00',
+      })
+
+      const badName = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '   ' }),
+      })
+      expect(badName.status).toBe(400)
+
+      const badDuration = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxDurationMinutes: -5 }),
+      })
+      expect(badDuration.status).toBe(400)
+
+      const badDurationZero = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxDurationMinutes: 0 }),
+      })
+      expect(badDurationZero.status).toBe(400)
+    })
+
+    it('returns 503 when the task runtime is not available', async () => {
+      // `createApp({ db })` in this test file does not inject a TaskRuntime,
+      // so every valid restart attempt should land on 503. This also
+      // exercises the guard path before the runner is touched.
+      const store = new TaskStore(db)
+      const task = createTask({ name: 'Completed task' })
+      store.update(task.id, {
+        status: 'completed',
+        resultStatus: 'completed',
+        completedAt: '2026-03-27 10:00:00',
+      })
+
+      const res = await fetch(`${baseUrl}/api/tasks/${task.id}/restart`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const body = await res.json() as { error: string }
+      expect(res.status).toBe(503)
+      expect(body.error).toContain('runtime is not available')
+    })
+  })
 })

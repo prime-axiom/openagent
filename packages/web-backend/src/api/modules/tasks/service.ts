@@ -1,10 +1,30 @@
-import { TaskStore, getToolCalls } from '@openagent/core'
-import type { Database, Task, TaskRuntimeTaskBoundary, TaskStatus, TaskTriggerType } from '@openagent/core'
+import { TaskStore, getToolCalls, resolveProviderModelInput } from '@openagent/core'
+import type {
+  Database,
+  ProviderConfig,
+  Task,
+  TaskRuntimeTaskBoundary,
+  TaskStatus,
+  TaskTriggerType,
+} from '@openagent/core'
+import type { RestartTaskInput } from './schema.js'
 import type { TaskTimelineEvent, TaskToolCallTimelineEvent } from './types.js'
 
 export interface TasksServiceOptions {
   db: Database
   getTaskRuntime?: () => TaskRuntimeTaskBoundary | null
+  /**
+   * Resolve a provider by id or name. Required for `restartTask` so the
+   * service can look up the (possibly overridden) provider the user chose
+   * in the edit form. Injected from the runtime composition so the service
+   * stays testable without pulling the whole provider registry.
+   */
+  resolveProvider?: (nameOrId: string) => ProviderConfig | null
+  /**
+   * Resolve the current default task provider, used by `restartTask` when
+   * neither the user nor the original task pinned a specific provider.
+   */
+  getDefaultProvider?: () => ProviderConfig | null
 }
 
 export interface ListTasksInput {
@@ -23,6 +43,24 @@ export class TaskNotFoundError extends Error {
 export class TaskCannotBeKilledError extends Error {
   constructor(public readonly status: string) {
     super(`Cannot kill task with status '${status}'. Only running tasks can be killed.`)
+  }
+}
+
+export class TaskCannotBeRestartedError extends Error {
+  constructor(public readonly status: string) {
+    super(`Cannot restart task with status '${status}'. Kill the task first, then restart.`)
+  }
+}
+
+export class TaskRestartProviderError extends Error {
+  constructor(message: string) {
+    super(message)
+  }
+}
+
+export class TaskRuntimeUnavailableError extends Error {
+  constructor() {
+    super('Task runtime is not available — cannot restart task.')
   }
 }
 
@@ -158,6 +196,96 @@ export class TasksService {
     }
 
     return updatedTask
+  }
+
+  /**
+   * Clone the given task into a new row with optional field overrides and
+   * start it immediately. The original row is left untouched — historical
+   * tasks stay visible with their results / failure reasons intact.
+   *
+   * Rules (agreed with the user):
+   *   - Only allowed on `completed` / `failed` tasks. `running` / `paused`
+   *     must be killed first.
+   *   - The new task always has `triggerType='user'`, even when the original
+   *     was a `cronjob` / `heartbeat` / `consolidation` — the user triggered
+   *     this run manually, so the cronjob binding is not inherited.
+   *   - Any field the client omits inherits from the original.
+   *   - The new task gets a fresh session id (handled by the task runner).
+   */
+  async restartTask(taskId: string, overrides: RestartTaskInput): Promise<Task> {
+    const original = this.getTaskById(taskId)
+    if (!original) {
+      throw new TaskNotFoundError()
+    }
+
+    if (original.status === 'running' || original.status === 'paused') {
+      throw new TaskCannotBeRestartedError(original.status)
+    }
+
+    const runtime = this.getRuntime()
+    if (!runtime) {
+      throw new TaskRuntimeUnavailableError()
+    }
+
+    // Resolve (provider, model): explicit override wins; otherwise inherit
+    // the original's pinned provider/model; otherwise fall back to the
+    // configured task default. This matches the behaviour of `create_task`.
+    const providerInput = overrides.provider ?? original.provider ?? undefined
+    const modelInput = overrides.model ?? original.model ?? undefined
+
+    let provider: ProviderConfig
+    let isDefaultModel: boolean
+
+    if (providerInput || modelInput) {
+      const resolved = resolveProviderModelInput({ provider: providerInput, model: modelInput })
+      if (!resolved.ok) {
+        throw new TaskRestartProviderError(resolved.error)
+      }
+      const base = this.options.resolveProvider?.(resolved.providerId) ?? null
+      if (!base) {
+        throw new TaskRestartProviderError(
+          `Provider "${resolved.providerName}" could not be loaded.`,
+        )
+      }
+      provider = resolved.modelId === base.defaultModel
+        ? base
+        : { ...base, defaultModel: resolved.modelId }
+      // Only treat as "default" when the client explicitly selected no
+      // provider/model *and* we fell back to default above — which isn't
+      // this branch.
+      isDefaultModel = false
+    } else {
+      const def = this.options.getDefaultProvider?.() ?? null
+      if (!def) {
+        throw new TaskRestartProviderError(
+          'No default task provider is configured. Set one in Settings → Tasks, or pick a provider in the restart form.',
+        )
+      }
+      provider = def
+      isDefaultModel = true
+    }
+
+    // Build the new task row. The new task always becomes a user-triggered
+    // task, with no link back to the original cronjob/heartbeat schedule.
+    const newTask = runtime.create({
+      name: overrides.name ?? original.name,
+      prompt: overrides.prompt ?? original.prompt,
+      triggerType: 'user',
+      provider: provider.name,
+      model: provider.defaultModel,
+      isDefaultModel,
+      maxDurationMinutes: overrides.maxDurationMinutes
+        ?? (original.maxDurationMinutes ?? undefined),
+    })
+
+    // Start the task. `startTask` now marks the row as `failed` on early
+    // setup errors (invalid provider, missing API key, …), so a throw here
+    // leaves the DB consistent. We surface the error to the caller so the
+    // UI can show it instead of silently landing on a failed row.
+    await runtime.start(newTask, provider)
+
+    // Re-fetch to capture `startedAt` / status updates from the runner.
+    return this.getTaskById(newTask.id) ?? newTask
   }
 }
 

@@ -23,6 +23,32 @@
             {{ $t('taskViewer.live') }}
           </Badge>
         </div>
+
+        <!-- Edit & Restart button. Only shown for terminal states. For
+             `running` / `paused` we surface a hint in the button's tooltip
+             so the user knows to kill or resume first. -->
+        <Button
+          v-if="!editing && canRestart"
+          variant="outline"
+          size="sm"
+          class="gap-1.5"
+          :title="$t('taskViewer.restartButtonHint')"
+          @click="startEdit"
+        >
+          <AppIcon name="refresh" size="sm" />
+          {{ $t('taskViewer.restartButton') }}
+        </Button>
+        <Button
+          v-else-if="!editing && taskInfo?.status && !canRestart"
+          variant="outline"
+          size="sm"
+          class="gap-1.5"
+          disabled
+          :title="$t(`taskViewer.restartDisabled.${taskInfo.status}`)"
+        >
+          <AppIcon name="refresh" size="sm" />
+          {{ $t('taskViewer.restartButton') }}
+        </Button>
       </div>
     </div>
 
@@ -48,8 +74,93 @@
 
     <!-- Events list -->
     <div v-else ref="eventsContainer" class="flex flex-1 flex-col gap-1 overflow-y-auto px-5 py-3">
-      <!-- Task prompt -->
-      <div v-if="taskInfo?.prompt" class="rounded-lg border border-border bg-card px-4 py-3">
+      <!-- Edit & Restart form (replaces the read-only Prompt block while editing) -->
+      <div v-if="editing" class="rounded-lg border border-primary/50 bg-card px-5 py-4">
+        <div class="mb-4 flex items-center gap-2">
+          <AppIcon name="refresh" size="sm" class="text-primary" />
+          <h3 class="text-sm font-semibold">{{ $t('taskViewer.restartFormTitle') }}</h3>
+        </div>
+
+        <!-- Warning when restarting a system-triggered task (cronjob / heartbeat / consolidation).
+             The new run will be stored as a regular user-triggered task and will
+             not be re-attached to its original schedule. -->
+        <Alert
+          v-if="showRetriggerNotice"
+          variant="default"
+          class="mb-4 border-amber-500/40 bg-amber-500/5 text-amber-900 dark:text-amber-200"
+        >
+          <AlertDescription class="text-xs">
+            {{ $t('taskViewer.restartTriggerNotice', { trigger: $t(`tasks.trigger.${taskInfo?.triggerType ?? 'user'}`) }) }}
+          </AlertDescription>
+        </Alert>
+
+        <Alert v-if="restartError" variant="destructive" class="mb-4">
+          <AlertDescription>{{ restartError }}</AlertDescription>
+        </Alert>
+
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label for="restart-name">{{ $t('taskViewer.fieldName') }}</Label>
+            <Input id="restart-name" v-model="form.name" :disabled="submitting" />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="restart-prompt">{{ $t('taskViewer.fieldPrompt') }}</Label>
+            <Textarea
+              id="restart-prompt"
+              v-model="form.prompt"
+              :disabled="submitting"
+              rows="10"
+              class="font-mono text-sm"
+            />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="restart-provider">{{ $t('taskViewer.fieldProvider') }}</Label>
+              <Select v-model="form.providerComposite" :disabled="submitting">
+                <SelectTrigger id="restart-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{{ $t('taskViewer.fieldProviderDefault') }}</SelectItem>
+                  <SelectItem
+                    v-for="opt in providerModelOptions"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="space-y-2">
+              <Label for="restart-duration">{{ $t('taskViewer.fieldMaxDuration') }}</Label>
+              <Input
+                id="restart-duration"
+                v-model.number="form.maxDurationMinutes"
+                type="number"
+                min="1"
+                :disabled="submitting"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 flex items-center justify-end gap-2">
+          <Button variant="ghost" :disabled="submitting" @click="cancelEdit">
+            {{ $t('common.cancel') }}
+          </Button>
+          <Button :disabled="submitting || !canSubmit" class="gap-1.5" @click="submitRestart">
+            <AppIcon name="refresh" size="sm" :class="{ 'animate-spin': submitting }" />
+            {{ $t('taskViewer.restartSubmit') }}
+          </Button>
+        </div>
+      </div>
+
+      <!-- Task prompt (read-only, hidden while editing) -->
+      <div v-if="!editing && taskInfo?.prompt" class="rounded-lg border border-border bg-card px-4 py-3">
         <div class="flex items-start gap-3">
           <AppIcon name="send" size="sm" class="mt-0.5 text-primary" />
           <div class="min-w-0 flex-1">
@@ -210,16 +321,23 @@
 <script setup lang="ts">
 import type { TaskEventItem } from '~/api/tasks'
 import { useTaskEvents } from '~/features/tasks/composables/useTaskEvents'
+import { useTasksApi } from '~/api/tasks'
+import { useProviders } from '~/composables/useProviders'
 
 const props = defineProps<{
   taskId: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   back: []
+  /** Fired after a successful restart — carries the new task's id so the
+   *  parent can switch the viewer to the new task. */
+  restarted: [taskId: string]
 }>()
 
 const { renderMarkdown } = useMarkdown()
+const tasksApi = useTasksApi()
+const { providers, fetchProviders } = useProviders()
 
 const {
   events,
@@ -233,6 +351,148 @@ const {
 
 const expandedItems = ref(new Set<number>())
 const expandedThinking = ref(new Set<number>())
+
+// —— Edit & Restart form state ——
+//
+// `editing` is flipped by the header Edit button. While true, the read-only
+// Prompt block is hidden and an editable form is rendered in its place.
+const editing = ref(false)
+const submitting = ref(false)
+const restartError = ref<string | null>(null)
+const form = reactive({
+  name: '',
+  prompt: '',
+  providerComposite: '' as string, // `providerId:modelId` or '' = default
+  // Use `''` as the empty sentinel so the Input component's v-model stays
+  // happy (it rejects `null`). Converted to undefined at submit time.
+  maxDurationMinutes: '' as number | '',
+})
+
+/** Only terminal tasks can be restarted. `running` / `paused` must be
+ *  killed or resumed first. Agreed behaviour. */
+const canRestart = computed(() => {
+  const s = taskInfo.value?.status
+  return s === 'completed' || s === 'failed'
+})
+
+const canSubmit = computed(() =>
+  form.name.trim().length > 0 && form.prompt.trim().length > 0,
+)
+
+/** Show a notice when restarting a task that wasn't user-triggered. The
+ *  new run will be a plain `user` task without cron/heartbeat binding. */
+const showRetriggerNotice = computed(() => {
+  const t = taskInfo.value?.triggerType
+  return t === 'cronjob' || t === 'heartbeat' || t === 'consolidation'
+})
+
+/** Flattened provider+model options, same pattern as CronjobFormDialog. */
+const providerModelOptions = computed(() => {
+  const options: { value: string; label: string }[] = []
+  for (const p of providers.value) {
+    const models = p.enabledModels && p.enabledModels.length > 0
+      ? p.enabledModels
+      : [p.defaultModel]
+    for (const modelId of models) {
+      options.push({
+        value: `${p.id}:${modelId}`,
+        label: `${p.name} (${modelId})`,
+      })
+    }
+  }
+  return options
+})
+
+/** Map the task's stored (provider, model) strings onto the composite
+ *  `providerId:modelId` used by the select. Falls back to '' when the
+ *  stored provider is unknown (e.g. deleted) — the user can then pick a
+ *  fresh one or leave it on Default. */
+function deriveCompositeFromTask(): string {
+  const provider = taskInfo.value?.provider
+  const model = taskInfo.value?.model
+  if (!provider) return ''
+  const match = providers.value.find(
+    p => p.id === provider || p.name.toLowerCase() === provider.toLowerCase(),
+  )
+  if (!match) return ''
+  const modelId = model && match.enabledModels?.includes(model)
+    ? model
+    : match.defaultModel
+  return `${match.id}:${modelId}`
+}
+
+async function startEdit() {
+  // Ensure providers are loaded before we try to map the stored provider
+  // onto the select value — otherwise the mapping would silently fall back
+  // to '' and look like "default" even though the task had a pinned provider.
+  if (providers.value.length === 0) {
+    try {
+      await fetchProviders()
+    } catch {
+      // If we can't load providers, we still allow editing — the user can
+      // type Name/Prompt and submit with default provider.
+    }
+  }
+
+  form.name = taskInfo.value?.name ?? ''
+  form.prompt = taskInfo.value?.prompt ?? ''
+  form.maxDurationMinutes = taskInfo.value?.maxDurationMinutes ?? ''
+  form.providerComposite = taskInfo.value?.isDefaultModel
+    ? ''
+    : deriveCompositeFromTask()
+  restartError.value = null
+  editing.value = true
+}
+
+function cancelEdit() {
+  if (submitting.value) return
+  editing.value = false
+  restartError.value = null
+}
+
+async function submitRestart() {
+  if (!canSubmit.value || submitting.value) return
+
+  restartError.value = null
+  submitting.value = true
+
+  try {
+    // Split the composite `providerId:modelId` back into separate fields
+    // the way the backend expects (explicit provider + model). An empty
+    // composite means "use configured default" — we send neither field.
+    let providerId: string | undefined
+    let modelId: string | undefined
+    const composite = form.providerComposite.trim()
+    if (composite) {
+      const colonIdx = composite.indexOf(':')
+      if (colonIdx === -1) {
+        providerId = composite
+      } else {
+        providerId = composite.slice(0, colonIdx)
+        modelId = composite.slice(colonIdx + 1) || undefined
+      }
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      prompt: form.prompt.trim(),
+      provider: providerId,
+      model: modelId,
+      maxDurationMinutes:
+        typeof form.maxDurationMinutes === 'number' && form.maxDurationMinutes > 0
+          ? form.maxDurationMinutes
+          : undefined,
+    }
+
+    const response = await tasksApi.restartTask(props.taskId, payload)
+    editing.value = false
+    emit('restarted', response.task.id)
+  } catch (err) {
+    restartError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    submitting.value = false
+  }
+}
 
 const firstEventTimestamp = computed(() => {
   return events.value.length > 0 ? events.value[0]!.timestamp : undefined
@@ -338,6 +598,10 @@ onMounted(() => {
 watch(() => props.taskId, (newId) => {
   disconnect()
   expandedItems.value.clear()
+  // Any pending edit belongs to the previous task — drop it before the new
+  // task loads so the form doesn't end up carrying stale values.
+  editing.value = false
+  restartError.value = null
   loadTaskEvents(newId)
 })
 

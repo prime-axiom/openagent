@@ -106,6 +106,17 @@ export interface RuntimeComposition {
   getAgentCore: () => AgentCore | null
   getTaskRuntime: () => TaskRuntimeBoundary
   /**
+   * Resolve a provider by id or case-insensitive name. Exposed so HTTP
+   * handlers (e.g. the tasks restart endpoint) can look up providers the
+   * user selected in the UI without duplicating the provider registry.
+   */
+  resolveProvider: (nameOrId: string) => ProviderConfig | null
+  /**
+   * Current task default provider — same source of truth as the task
+   * runner and cronjob scheduler.
+   */
+  getTaskDefaultProvider: () => ProviderConfig
+  /**
    * Names of the tools the task runner gives to background task agents.
    * Exposed so the cronjob UI can render the current tool list dynamically
    * instead of hardcoding a stale copy.
@@ -1051,6 +1062,8 @@ export async function createRuntimeComposition(options: RuntimeCompositionOption
     chatEventBus,
     getAgentCore: () => agentCore,
     getTaskRuntime: () => taskRuntime,
+    resolveProvider,
+    getTaskDefaultProvider,
     getBackgroundTaskToolNames: () => backgroundTaskTools.map(t => t.name),
     getTelegramBot: () => telegramBot,
     onTelegramSettingsChanged: () => {

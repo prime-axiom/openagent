@@ -33,6 +33,8 @@ export async function startHttpBoundary(
     agentHeartbeatService: runtimeComposition.agentHeartbeatService,
     onAgentHeartbeatSettingsChanged: () => {},
     getTaskRuntime: runtimeComposition.getTaskRuntime,
+    resolveProvider: runtimeComposition.resolveProvider,
+    getTaskDefaultProvider: runtimeComposition.getTaskDefaultProvider,
     getBackgroundTaskToolNames: runtimeComposition.getBackgroundTaskToolNames,
     getTelegramBot: runtimeComposition.getTelegramBot,
     onTelegramSettingsChanged: runtimeComposition.onTelegramSettingsChanged,

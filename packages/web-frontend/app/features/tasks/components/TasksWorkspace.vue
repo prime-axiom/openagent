@@ -4,6 +4,7 @@
     v-if="selectedTaskId"
     :task-id="selectedTaskId"
     @back="closeViewer"
+    @restarted="onTaskRestarted"
   />
 
   <div v-else class="flex h-full flex-col overflow-hidden">
@@ -255,6 +256,16 @@ function openViewer(taskId: string) {
 function closeViewer() {
   selectedTaskId.value = null
   loadTasks(pagination.value.page)
+}
+
+// After a successful restart, swap the viewer to the new task so the user
+// can watch it run. We also refresh the list in the background so the new
+// row shows up when they navigate back.
+function onTaskRestarted(newTaskId: string) {
+  selectedTaskId.value = newTaskId
+  loadTasks(1).catch(() => {
+    // Background refresh — errors are already surfaced by useTasksList.
+  })
 }
 
 const {

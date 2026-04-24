@@ -925,6 +925,20 @@
     "agentResponse": "Agent-Antwort",
     "thinking": "Überlegung",
     "resultSummary": "Task-Ergebnis",
-    "noSummary": "Task ohne Zusammenfassung abgeschlossen."
+    "noSummary": "Task ohne Zusammenfassung abgeschlossen.",
+    "restartButton": "Bearbeiten & Neustart",
+    "restartButtonHint": "Prompt / Provider bearbeiten und neu starten. Der ursprüngliche Task bleibt in der Historie.",
+    "restartDisabled": {
+      "running": "Task zuerst beenden, bevor er neu gestartet werden kann.",
+      "paused": "Pausierte Tasks können nicht neu gestartet werden — stattdessen fortsetzen."
+    },
+    "restartFormTitle": "Task bearbeiten & neu starten",
+    "restartTriggerNotice": "Der ursprüngliche Task wurde durch {trigger} ausgelöst. Der neue Lauf wird als benutzerausgelöster Task gespeichert und nicht mehr mit dem ursprünglichen Zeitplan verknüpft.",
+    "restartSubmit": "Speichern & Neustarten",
+    "fieldName": "Name",
+    "fieldPrompt": "Prompt",
+    "fieldProvider": "Provider / Modell",
+    "fieldProviderDefault": "Task-Standard verwenden",
+    "fieldMaxDuration": "Max. Laufzeit (Minuten)"
   }
 }
